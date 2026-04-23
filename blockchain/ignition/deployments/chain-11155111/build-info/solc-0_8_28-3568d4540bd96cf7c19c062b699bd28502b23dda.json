@@ -1,0 +1,49 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-3568d4540bd96cf7c19c062b699bd28502b23dda",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "compilerType": "solc",
+  "toolVersions": {
+    "hardhat": "3.4.0"
+  },
+  "userSourceNameMap": {
+    "contracts/FarmTrace.sol": "project/contracts/FarmTrace.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode.linkReferences",
+            "evm.bytecode.object",
+            "evm.bytecode.opcodes",
+            "evm.bytecode.sourceMap",
+            "evm.deployedBytecode.immutableReferences",
+            "evm.deployedBytecode.linkReferences",
+            "evm.deployedBytecode.object",
+            "evm.deployedBytecode.opcodes",
+            "evm.deployedBytecode.sourceMap",
+            "evm.methodIdentifiers"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/FarmTrace.sol": {
+        "content": "// SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.28;\r\n\r\n\r\ncontract FarmTrace {\r\n\r\n    // Structure to store one product batch\r\n    struct Batch {\r\n        uint256 id;\r\n        string farmerName;\r\n        string farmLocation;\r\n        string cropName;\r\n        uint256 quantity;       // in kg\r\n        string harvestDate;\r\n        string qualityGrade;\r\n        bool isOrganic;\r\n        string notes;\r\n        address farmerAddress;\r\n        uint256 timestamp;\r\n    }\r\n\r\n    // Storage\r\n    uint256 public batchCount = 0;\r\n    mapping(uint256 => Batch) public batches;\r\n\r\n    // Event emitted when a new batch is created\r\n    event BatchCreated(uint256 id, string cropName, address farmerAddress);\r\n\r\n    // Farmer calls this to register a product batch\r\n    function createBatch(\r\n        string memory _farmerName,\r\n        string memory _farmLocation,\r\n        string memory _cropName,\r\n        uint256 _quantity,\r\n        string memory _harvestDate,\r\n        string memory _qualityGrade,\r\n        bool _isOrganic,\r\n        string memory _notes\r\n    ) public returns (uint256) {\r\n        batchCount++;\r\n\r\n        batches[batchCount] = Batch({\r\n            id: batchCount,\r\n            farmerName: _farmerName,\r\n            farmLocation: _farmLocation,\r\n            cropName: _cropName,\r\n            quantity: _quantity,\r\n            harvestDate: _harvestDate,\r\n            qualityGrade: _qualityGrade,\r\n            isOrganic: _isOrganic,\r\n            notes: _notes,\r\n            farmerAddress: msg.sender,\r\n            timestamp: block.timestamp\r\n        });\r\n\r\n        emit BatchCreated(batchCount, _cropName, msg.sender);\r\n        return batchCount;\r\n    }\r\n\r\n    // Buyer calls this to view batch details (by QR code ID)\r\n    function getBatch(uint256 _id) public view returns (Batch memory) {\r\n        require(_id > 0 && _id <= batchCount, \"Batch not found\");\r\n        return batches[_id];\r\n    }\r\n}"
+      }
+    }
+  }
+}
