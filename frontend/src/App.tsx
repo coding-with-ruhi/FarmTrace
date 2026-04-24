@@ -39,8 +39,8 @@ interface BatchResult {
 }
 
 const JSONBIN_CONFIG = {
-  BIN_ID: '67c9c6f2e41b4d34e49f692a', // Placeholder - will be updated if user provides one
-  API_KEY: '$2a$10$T8VqXlW3hXy.Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z' // Placeholder
+  BIN_ID: import.meta.env.VITE_JSONBIN_BIN_ID || '67c9c6f2e41b4d34e49f692a',
+  API_KEY: import.meta.env.VITE_JSONBIN_API_KEY || '$2a$10$T8VqXlW3hXy.Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z'
 };
 
 const App: React.FC = () => {
@@ -50,6 +50,11 @@ const App: React.FC = () => {
   const [result, setResult] = useState<BatchResult | null>(null);
   const [account, setAccount] = useState<string>('');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [errorModal, setErrorModal] = useState<{show: boolean, title: string, message: string}>({
+    show: false,
+    title: '',
+    message: ''
+  });
   
   // Persistence for mock data
   const [batches, setBatches] = useState<BatchResult[]>(() => {
@@ -140,7 +145,11 @@ const App: React.FC = () => {
         setIsConnecting(false);
       }
     } else {
-      alert("Please install MetaMask to use the blockchain features.");
+      setErrorModal({
+        show: true,
+        title: 'Wallet Required',
+        message: 'Please install MetaMask or a compatible Web3 wallet to use the blockchain features.'
+      });
     }
   };
 
@@ -188,7 +197,11 @@ const App: React.FC = () => {
         setResult(newBatch);
       } catch (error) {
         console.error("Blockchain error:", error);
-        alert("Failed to register batch on blockchain.");
+        setErrorModal({
+          show: true,
+          title: 'Blockchain Error',
+          message: 'Failed to register batch on blockchain. Please check your connection and try again.'
+        });
       } finally {
         setLoading(false);
       }
@@ -257,14 +270,37 @@ const App: React.FC = () => {
     setLoading(true);
     setResult(null);
 
-    // Step 2: Try Blockchain First
+    let foundOnBlockchain = false;
+
+    // Step 1: Try Blockchain First (most reliable source of truth)
     if (CONTRACT_ADDRESS && id.startsWith('FT-')) {
       try {
         const batchId = id.split('-')[1];
         if (batchId && !isNaN(parseInt(batchId))) {
-          const provider = new ethers.JsonRpcProvider(import.meta.env.VITE_NETWORK_RPC || "https://rpc.sepolia.org");
-          const contract = new ethers.Contract(CONTRACT_ADDRESS, FARM_TRACE_ABI, provider);
-          const batch = await contract.getBatch(parseInt(batchId));
+          // Use multiple RPC fallbacks for mobile reliability
+          const rpcs = [
+            import.meta.env.VITE_NETWORK_RPC,
+            "https://rpc.ankr.com/eth_sepolia",
+            "https://eth-sepolia.public.blastapi.io",
+            "https://rpc.sepolia.org"
+          ].filter(Boolean);
+
+          let batch = null;
+          for (const rpcUrl of rpcs) {
+            try {
+              const provider = new ethers.JsonRpcProvider(rpcUrl as string);
+              const contract = new ethers.Contract(CONTRACT_ADDRESS, FARM_TRACE_ABI, provider);
+              // Set a timeout for the contract call
+              const result = await Promise.race([
+                contract.getBatch(parseInt(batchId)),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+              ]);
+              batch = result;
+              if (batch && batch.id > 0n) break;
+            } catch (e) {
+              console.warn(`RPC ${rpcUrl} failed, trying next...`);
+            }
+          }
           
           if (batch && batch.id > 0n) {
             setResult({
@@ -281,33 +317,39 @@ const App: React.FC = () => {
               timestamp: new Date(Number(batch.timestamp) * 1000).toISOString(),
               verificationSource: 'blockchain'
             });
-            setLoading(false);
-            return;
+            foundOnBlockchain = true;
           }
         }
       } catch (error) {
-        console.warn("Blockchain search failed, trying cloud fallback...", error);
+        console.error("Blockchain lookup error:", error);
       }
     }
 
-    // Step 3: Fallback → Local/Cloud (JSONBin)
-    // We wait a bit to simulate a real search and ensure state is updated
-    setTimeout(() => {
-      const found = batches.find(b => 
-        b.id.replace('#', '').toUpperCase() === id || 
-        b.id.replace('#', '').toUpperCase() === `FT-${id}`
-      );
-
-      if (found) {
-        setResult({
-          ...found,
-          verificationSource: found.verificationSource || 'cloud'
-        });
-      } else {
-        alert(`Verification Failed: Batch ${id} not found in the decentralized ledger.\n\nNote: If you just created this batch on another device, please ensure cloud sync is active or wait a few moments for the ledger to update.`);
-      }
+    if (foundOnBlockchain) {
       setLoading(false);
-    }, 1000);
+      return;
+    }
+
+    // Step 2: Fallback → Local/Cloud (JSONBin)
+    // Only run this if not found on blockchain
+    const found = batches.find(b => 
+      b.id.replace('#', '').toUpperCase() === id || 
+      b.id.replace('#', '').toUpperCase() === `FT-${id}`
+    );
+
+    if (found) {
+      setResult({
+        ...found,
+        verificationSource: found.verificationSource || 'cloud'
+      });
+    } else {
+      setErrorModal({
+        show: true,
+        title: 'Verification Failed',
+        message: `Batch ${id} not found in the decentralized ledger.\n\nNote: If you just created this batch on another device, please ensure cloud sync is active or wait a few moments for the ledger to update. Ensure you have pushed your .env keys to Vercel if running in production.`
+      });
+    }
+    setLoading(false);
   };
 
   const getVerificationUrl = (id: string) => {
@@ -529,6 +571,21 @@ const App: React.FC = () => {
               <button className="btn btn-primary" onClick={() => handleSearch()} disabled={loading} style={{ height: '48px', padding: '0 24px', flex: '1 1 100px' }}>
                 {loading ? "Tracing..." : "Trace Origin"}
               </button>
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => {
+                  fetchBatchesFromCloud();
+                  setErrorModal({
+                    show: true,
+                    title: 'Cloud Syncing',
+                    message: 'Refreshing batch records from the decentralized cloud ledger...'
+                  });
+                }} 
+                style={{ height: '48px', width: '48px', padding: '0', borderRadius: '12px' }}
+                title="Sync from Cloud"
+              >
+                <History size={18} />
+              </button>
             </div>
 
             {/* Results */}
@@ -679,7 +736,54 @@ const App: React.FC = () => {
         </div>
       </footer>
 
+      {/* Error Modal */}
+      {errorModal.show && (
+        <div className="modal-overlay" onClick={() => setErrorModal({ ...errorModal, show: false })}>
+          <div className="modal-content card animate-in" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '8px', borderRadius: '8px' }}>
+                  <Info size={20} />
+                </div>
+                <h3 style={{ margin: 0 }}>{errorModal.title}</h3>
+              </div>
+              <button 
+                onClick={() => setErrorModal({ ...errorModal, show: false })}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <Trash2 size={20} style={{ transform: 'rotate(45deg)' }} />
+              </button>
+            </div>
+            <p style={{ color: 'var(--text-dim)', marginBottom: '32px', whiteSpace: 'pre-line' }}>{errorModal.message}</p>
+            <button 
+              className="btn btn-primary" 
+              style={{ width: '100%' }}
+              onClick={() => setErrorModal({ ...errorModal, show: false })}
+            >
+              Understand
+            </button>
+          </div>
+        </div>
+      )}
+
       <style>{`
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.8);
+          backdrop-filter: blur(8px);
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .modal-content {
+          max-width: 500px;
+          width: 100%;
+          border: 1px solid var(--border-light);
+          box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+        }
         .spinner {
           width: 20px;
           height: 20px;
@@ -690,6 +794,19 @@ const App: React.FC = () => {
         }
         @keyframes spin {
           to { transform: rotate(360deg); }
+        }
+        @media (max-width: 640px) {
+          .navbar .container {
+            flex-direction: row !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+          }
+          .navbar span {
+            display: none;
+          }
+          .hero-section h1 {
+            font-size: 2.5rem;
+          }
         }
       `}</style>
     </div>
