@@ -300,7 +300,7 @@ const App: React.FC = () => {
               const contract = new ethers.Contract(CONTRACT_ADDRESS, FARM_TRACE_ABI, provider);
               // Set a timeout for the contract call
               const result = await Promise.race([
-                contract.getBatch(parseInt(batchId)),
+                contract.getBatch(batchId),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
               ]);
               batch = result;
@@ -415,14 +415,14 @@ const App: React.FC = () => {
       <main className="container" style={{ flex: 1, paddingBottom: '80px' }}>
         {/* Hero Section */}
         {!result && (
-          <header className="animate-in" style={{ marginBottom: '40px', textAlign: 'center', paddingTop: '20px' }}>
+          <header className="hero-header animate-in" style={{ marginBottom: '40px', textAlign: 'center', paddingTop: '20px' }}>
             <div className="label-caps" style={{ marginBottom: '16px', color: 'var(--primary)' }}>
               Trust in every grain
             </div>
-            <h1 style={{ marginBottom: '24px', maxWidth: '800px', margin: '0 auto 24px' }}>
+            <h1 className="hero-title" style={{ marginBottom: '24px', maxWidth: '800px', margin: '0 auto 24px' }}>
               The Immutable Future of <span className="text-gradient">AgroLedger Traceability</span>
             </h1>
-            <p style={{ color: 'var(--text-dim)', fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto 40px' }}>
+            <p className="hero-subtitle" style={{ color: 'var(--text-dim)', fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto 40px' }}>
               Connect directly with the source. Verified by blockchain, powered by transparency.
             </p>
             <div style={{ position: 'relative', height: 'clamp(200px, 40vh, 400px)', borderRadius: 'var(--radius-xl)', overflow: 'hidden', border: '1px solid var(--border-light)' }}>
@@ -536,6 +536,13 @@ const App: React.FC = () => {
                     <><ShieldCheck size={20} /> Secure Batch on Ledger</>
                   )}
                 </button>
+                
+                {!JSONBIN_CONFIG.API_KEY && (
+                  <p style={{ marginTop: '12px', fontSize: '11px', color: 'var(--secondary)', textAlign: 'center', opacity: 0.8 }}>
+                    <Info size={10} style={{ marginRight: '4px' }} /> 
+                    Cloud Sync is currently in Read-Only mode. Update your .env keys for cross-device syncing.
+                  </p>
+                )}
               </form>
             </div>
 
@@ -811,12 +818,25 @@ const App: React.FC = () => {
             flex-direction: row !important;
             justify-content: space-between !important;
             align-items: center !important;
+            padding: 0 12px;
           }
           .navbar span {
             display: none;
           }
-          .hero-section h1 {
-            font-size: 2.5rem;
+          .hero-header {
+            padding-top: 10px !important;
+            margin-bottom: 20px !important;
+          }
+          .hero-title {
+            font-size: 2.2rem !important;
+          }
+          .hero-subtitle {
+            font-size: 0.95rem !important;
+            margin-bottom: 20px !important;
+          }
+          .btn {
+            padding: 10px 16px;
+            font-size: 13px;
           }
         }
       `}</style>
