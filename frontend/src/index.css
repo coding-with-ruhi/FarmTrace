@@ -85,6 +85,12 @@ body::after {
   padding: 0 24px;
 }
 
+@media (max-width: 640px) {
+  .container {
+    padding: 0 16px;
+  }
+}
+
 /* Typography */
 h1, h2, h3, h4 {
   font-family: 'Outfit', sans-serif;
@@ -93,8 +99,8 @@ h1, h2, h3, h4 {
   color: var(--text-main);
 }
 
-h1 { font-size: clamp(2.5rem, 8vw, 4rem); line-height: 1.1; }
-h2 { font-size: clamp(1.8rem, 5vw, 2.5rem); line-height: 1.2; }
+h1 { font-size: clamp(2.2rem, 8vw, 4rem); line-height: 1.1; }
+h2 { font-size: clamp(1.6rem, 5vw, 2.5rem); line-height: 1.2; }
 
 .label-caps {
   font-family: 'Space Grotesk', sans-serif;
@@ -119,8 +125,15 @@ h2 { font-size: clamp(1.8rem, 5vw, 2.5rem); line-height: 1.2; }
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--glass-border);
-  padding: 20px 0;
-  margin-bottom: 40px;
+  padding: 16px 0;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 768px) {
+  .navbar .container {
+    flex-direction: column;
+    gap: 16px;
+  }
 }
 
 .card {
@@ -131,6 +144,12 @@ h2 { font-size: clamp(1.8rem, 5vw, 2.5rem); line-height: 1.2; }
   transition: var(--transition);
   position: relative;
   overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: 24px;
+  }
 }
 
 .card::before {
@@ -169,6 +188,7 @@ h2 { font-size: clamp(1.8rem, 5vw, 2.5rem); line-height: 1.2; }
   transition: var(--transition);
   position: relative;
   overflow: hidden;
+  white-space: nowrap;
 }
 
 .btn-primary {
@@ -191,12 +211,6 @@ h2 { font-size: clamp(1.8rem, 5vw, 2.5rem); line-height: 1.2; }
   background: rgba(255,255,255,0.05);
   color: var(--text-main);
   border-color: var(--border-light);
-}
-
-.btn-active {
-  background: rgba(255,255,255,0.1);
-  color: var(--text-main);
-  border-color: rgba(255,255,255,0.2);
 }
 
 /* Inputs */
@@ -240,10 +254,28 @@ h2 { font-size: clamp(1.8rem, 5vw, 2.5rem); line-height: 1.2; }
 
 @media (max-width: 1024px) {
   .grid-main {
-    grid-template-columns: 1fr;
+    gap: 24px;
   }
-  .col-8, .col-4 {
-    grid-column: span 12 !important;
+}
+
+@media (max-width: 768px) {
+  .grid-main {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .grid-main > * {
+    grid-column: span 1 !important;
+  }
+}
+
+.col-12 { grid-column: span 12; }
+.col-8 { grid-column: span 8; }
+.col-6 { grid-column: span 6; }
+.col-4 { grid-column: span 4; }
+
+@media (max-width: 768px) {
+  .col-8, .col-6, .col-4 {
+    grid-column: span 12;
   }
 }
 
@@ -256,6 +288,21 @@ h2 { font-size: clamp(1.8rem, 5vw, 2.5rem); line-height: 1.2; }
   background: rgba(120, 209, 254, 0.1);
   color: var(--tertiary);
   border: 1px solid rgba(120, 209, 254, 0.2);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-cloud {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(240, 189, 139, 0.1);
+  color: var(--secondary);
+  border: 1px solid rgba(240, 189, 139, 0.2);
   border-radius: var(--radius-full);
   font-size: 11px;
   font-weight: 700;

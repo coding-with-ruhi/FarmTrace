@@ -35,7 +35,13 @@ interface BatchResult {
   notes: string;
   hash: string;
   timestamp: string;
+  verificationSource?: 'blockchain' | 'cloud' | 'local';
 }
+
+const JSONBIN_CONFIG = {
+  BIN_ID: '67c9c6f2e41b4d34e49f692a', // Placeholder - will be updated if user provides one
+  API_KEY: '$2a$10$T8VqXlW3hXy.Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z' // Placeholder
+};
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'farmer' | 'buyer'>('farmer');
@@ -47,27 +53,66 @@ const App: React.FC = () => {
   
   // Persistence for mock data
   const [batches, setBatches] = useState<BatchResult[]>(() => {
-    const saved = localStorage.getItem('agro_ledger_batches');
+    const saved = localStorage.getItem('ugaanchain_batches');
     const initial = saved ? JSON.parse(saved) : [
       {
         id: "FT-10024",
-        crop: "Heirloom Tomatoes",
-        farmer: "Sanjana Prasad",
-        location: "Mysuru Organic Farms, Karnataka",
-        quantity: "250",
-        harvestDate: "2026-04-15",
+        crop: "Organic Saffron",
+        farmer: "Aditya Sharma",
+        location: "Kashmir Valley, J&K",
+        quantity: "5",
+        harvestDate: "2026-04-10",
         quality: "Grade A+",
         organic: true,
-        notes: "Grown in nutrient-rich volcanic soil with regenerative practices.",
-        hash: "0x8f2c3a5d8e9b4f1c7a2d6e9f1a2c3b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
-        timestamp: new Date().toISOString()
+        notes: "Hand-picked during the first bloom. Purest quality from high altitudes.",
+        hash: "0x7d2c3a5d8e9b4f1c7a2d6e9f1a2c3b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a11",
+        timestamp: new Date().toISOString(),
+        verificationSource: 'cloud'
       }
     ];
     return initial;
   });
 
+  // NEW: Cloud Sync Logic
+  const fetchBatchesFromCloud = async () => {
+    if (!JSONBIN_CONFIG.BIN_ID || JSONBIN_CONFIG.BIN_ID.includes('Placeholder')) return;
+    try {
+      const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.BIN_ID}/latest`, {
+        headers: { 'X-Master-Key': JSONBIN_CONFIG.API_KEY }
+      });
+      if (!res.ok) throw new Error('Cloud fetch failed');
+      const data = await res.json();
+      if (data.record && Array.isArray(data.record)) {
+        setBatches(data.record);
+        localStorage.setItem('ugaanchain_batches', JSON.stringify(data.record));
+      }
+    } catch (error) {
+      console.warn("Cloud sync currently unavailable. Operating in Local/Hybrid mode.");
+    }
+  };
+
+  const saveBatchesToCloud = async (updatedBatches: BatchResult[]) => {
+    if (!JSONBIN_CONFIG.BIN_ID || JSONBIN_CONFIG.BIN_ID.includes('Placeholder')) return;
+    try {
+      await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.BIN_ID}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Master-Key': JSONBIN_CONFIG.API_KEY
+        },
+        body: JSON.stringify(updatedBatches)
+      });
+    } catch (error) {
+      console.error("Cloud sync failed:", error);
+    }
+  };
+
   useEffect(() => {
-    localStorage.setItem('agro_ledger_batches', JSON.stringify(batches));
+    fetchBatchesFromCloud();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('ugaanchain_batches', JSON.stringify(batches));
   }, [batches]);
 
   // Form Fields State
@@ -128,10 +173,16 @@ const App: React.FC = () => {
           id: newId,
           ...formData,
           hash: tx.hash,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          verificationSource: 'blockchain'
         };
         
-        setBatches(prev => [newBatch, ...prev]);
+        setBatches(prev => {
+          const updated = [newBatch, ...prev];
+          saveBatchesToCloud(updated);
+          return updated;
+        });
+        
         setActiveTab('buyer');
         setSearchId(newId);
         setResult(newBatch);
@@ -142,8 +193,8 @@ const App: React.FC = () => {
         setLoading(false);
       }
     } else {
-      // Fallback to mock behavior if no contract or no wallet
-      setTimeout(() => {
+      // Case 2: No Wallet (Fallback)
+      setTimeout(async () => {
         const newId = `FT-${Math.floor(10000 + Math.random() * 90000)}`;
         const newHash = `0x${Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
         
@@ -151,10 +202,16 @@ const App: React.FC = () => {
           id: newId,
           ...formData,
           hash: newHash,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          verificationSource: 'cloud'
         };
         
-        setBatches(prev => [newBatch, ...prev]);
+        setBatches(prev => {
+          const updated = [newBatch, ...prev];
+          saveBatchesToCloud(updated);
+          return updated;
+        });
+        
         setLoading(false);
         setActiveTab('buyer');
         setSearchId(newId);
@@ -175,7 +232,7 @@ const App: React.FC = () => {
     });
   };
 
-  // NEW: Handle "Auto-Scan" from URL parameters
+  // Handle "Auto-Scan" from URL parameters
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const batchFromUrl = params.get('batch');
@@ -183,29 +240,29 @@ const App: React.FC = () => {
       setActiveTab('buyer');
       const id = batchFromUrl.trim().replace('#', '').toUpperCase();
       setSearchId(id);
-      setLoading(true);
-      setTimeout(() => {
-        const found = batches.find(b => b.id.replace('#', '').toUpperCase() === id);
-        if (found) {
-          setResult(found);
-        }
-        setLoading(false);
-      }, 1200);
+      
+      // Give time for cloud fetch to complete if it's the first load
+      const timer = setTimeout(() => {
+        handleSearch(id);
+      }, 1500);
+      return () => clearTimeout(timer);
     }
   }, []);
 
-  const handleSearch = async () => {
-    const id = searchId.trim().replace('#', '').toUpperCase();
+  const handleSearch = async (targetId?: string) => {
+    const rawId = (targetId || searchId).trim().replace('#', '');
+    const id = rawId.toUpperCase();
+    
     if (!id) return;
     setLoading(true);
     setResult(null);
 
-    // Try blockchain search if ID looks like a contract ID (e.g., FT-1)
+    // Step 2: Try Blockchain First
     if (CONTRACT_ADDRESS && id.startsWith('FT-')) {
       try {
         const batchId = id.split('-')[1];
         if (batchId && !isNaN(parseInt(batchId))) {
-          const provider = new ethers.JsonRpcProvider(import.meta.env.VITE_NETWORK_RPC);
+          const provider = new ethers.JsonRpcProvider(import.meta.env.VITE_NETWORK_RPC || "https://rpc.sepolia.org");
           const contract = new ethers.Contract(CONTRACT_ADDRESS, FARM_TRACE_ABI, provider);
           const batch = await contract.getBatch(parseInt(batchId));
           
@@ -220,28 +277,37 @@ const App: React.FC = () => {
               quality: batch.qualityGrade,
               organic: batch.isOrganic,
               notes: batch.notes,
-              hash: "Verified on Blockchain", // Hash would ideally come from event logs
-              timestamp: new Date(Number(batch.timestamp) * 1000).toISOString()
+              hash: "✅ Verified on Blockchain",
+              timestamp: new Date(Number(batch.timestamp) * 1000).toISOString(),
+              verificationSource: 'blockchain'
             });
             setLoading(false);
             return;
           }
         }
       } catch (error) {
-        console.warn("Blockchain search failed, falling back to local:", error);
+        console.warn("Blockchain search failed, trying cloud fallback...", error);
       }
     }
 
-    // Fallback to local storage
+    // Step 3: Fallback → Local/Cloud (JSONBin)
+    // We wait a bit to simulate a real search and ensure state is updated
     setTimeout(() => {
-      const found = batches.find(b => b.id.replace('#', '').toUpperCase() === id);
+      const found = batches.find(b => 
+        b.id.replace('#', '').toUpperCase() === id || 
+        b.id.replace('#', '').toUpperCase() === `FT-${id}`
+      );
+
       if (found) {
-        setResult(found);
+        setResult({
+          ...found,
+          verificationSource: found.verificationSource || 'cloud'
+        });
       } else {
-        alert(`Verification Failed: Batch ${id} not found in the decentralized ledger.`);
+        alert(`Verification Failed: Batch ${id} not found in the decentralized ledger.\n\nNote: If you just created this batch on another device, please ensure cloud sync is active or wait a few moments for the ledger to update.`);
       }
       setLoading(false);
-    }, 1200);
+    }, 1000);
   };
 
   const getVerificationUrl = (id: string) => {
@@ -252,25 +318,25 @@ const App: React.FC = () => {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Navbar */}
       <nav className="navbar">
-        <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <a href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ background: 'var(--primary)', color: 'var(--on-primary)', padding: '8px', borderRadius: '12px', display: 'flex' }}>
               <Sprout size={24} />
             </div>
             <span style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-main)', letterSpacing: '-0.02em' }}>AgroLedger</span>
           </a>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: '8px', background: 'var(--surface-light)', padding: '4px', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-light)' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: '4px', background: 'var(--surface-light)', padding: '4px', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-light)' }}>
               <button 
                 className={`btn ${activeTab === 'farmer' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ padding: '8px 20px', fontSize: '13px' }}
+                style={{ padding: '8px 16px', fontSize: '12px' }}
                 onClick={() => { setActiveTab('farmer'); setResult(null); }}
               >
-                Farmer Portal
+                Farmer
               </button>
               <button 
                 className={`btn ${activeTab === 'buyer' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ padding: '8px 20px', fontSize: '13px' }}
+                style={{ padding: '8px 16px', fontSize: '12px' }}
                 onClick={() => { setActiveTab('buyer'); setResult(null); }}
               >
                 Traceability
@@ -279,14 +345,14 @@ const App: React.FC = () => {
             
             <button 
               className={`btn ${account ? 'btn-ghost' : 'btn-primary'}`}
-              style={{ padding: '8px 20px', fontSize: '13px', gap: '8px', border: account ? '1px solid var(--border-light)' : 'none' }}
+              style={{ padding: '8px 16px', fontSize: '12px', gap: '8px', border: account ? '1px solid var(--border-light)' : 'none' }}
               onClick={connectWallet}
               disabled={isConnecting}
             >
               {account ? (
-                <><div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} /> {account.substring(0, 6)}...{account.substring(account.length - 4)}</>
+                <><div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} /> {account.substring(0, 4)}...{account.substring(account.length - 3)}</>
               ) : (
-                <><Wallet size={16} /> {isConnecting ? 'Connecting...' : 'Connect Wallet'}</>
+                <><Wallet size={14} /> {isConnecting ? '...' : 'Wallet'}</>
               )}
             </button>
           </div>
@@ -296,17 +362,17 @@ const App: React.FC = () => {
       <main className="container" style={{ flex: 1, paddingBottom: '80px' }}>
         {/* Hero Section */}
         {!result && (
-          <header className="animate-in" style={{ marginBottom: '60px', textAlign: 'center', paddingTop: '40px' }}>
+          <header className="animate-in" style={{ marginBottom: '40px', textAlign: 'center', paddingTop: '20px' }}>
             <div className="label-caps" style={{ marginBottom: '16px', color: 'var(--primary)' }}>
               Trust in every grain
             </div>
             <h1 style={{ marginBottom: '24px', maxWidth: '800px', margin: '0 auto 24px' }}>
-              The Immutable Future of <span className="text-gradient">Agricultural Traceability</span>
+              The Immutable Future of <span className="text-gradient">AgroLedger Traceability</span>
             </h1>
-            <p style={{ color: 'var(--text-dim)', fontSize: '18px', maxWidth: '600px', margin: '0 auto 40px' }}>
+            <p style={{ color: 'var(--text-dim)', fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto 40px' }}>
               Connect directly with the source. Verified by blockchain, powered by transparency.
             </p>
-            <div style={{ position: 'relative', height: '400px', borderRadius: 'var(--radius-xl)', overflow: 'hidden', border: '1px solid var(--border-light)' }}>
+            <div style={{ position: 'relative', height: 'clamp(200px, 40vh, 400px)', borderRadius: 'var(--radius-xl)', overflow: 'hidden', border: '1px solid var(--border-light)' }}>
               <img src={agroHero} alt="Agro Hero" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: '0.6' }} />
               <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(0deg, var(--bg-deep) 0%, transparent 100%)' }} />
             </div>
@@ -315,8 +381,8 @@ const App: React.FC = () => {
 
         {activeTab === 'farmer' ? (
           <div className="grid-main">
-            <div className="card animate-in delay-1" style={{ gridColumn: 'span 8' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
+            <div className="card animate-in delay-1 col-8">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px', flexWrap: 'wrap' }}>
                 <div style={{ background: 'var(--primary-glow)', color: 'var(--primary)', padding: '12px', borderRadius: '12px' }}>
                   <Leaf size={24} />
                 </div>
@@ -328,7 +394,7 @@ const App: React.FC = () => {
 
               <form onSubmit={handleRegisterBatch}>
                 <div className="grid-main" style={{ gap: '20px', marginBottom: '20px' }}>
-                  <div className="input-group" style={{ gridColumn: 'span 6', marginBottom: 0 }}>
+                  <div className="input-group col-6">
                     <label><User size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} /> Farmer Name</label>
                     <input 
                       className="input-field"
@@ -339,7 +405,7 @@ const App: React.FC = () => {
                       onChange={e => setFormData({...formData, farmer: e.target.value})}
                     />
                   </div>
-                  <div className="input-group" style={{ gridColumn: 'span 6', marginBottom: 0 }}>
+                  <div className="input-group col-6">
                     <label><MapPin size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} /> Location</label>
                     <input 
                       className="input-field"
@@ -350,7 +416,7 @@ const App: React.FC = () => {
                       onChange={e => setFormData({...formData, location: e.target.value})}
                     />
                   </div>
-                  <div className="input-group" style={{ gridColumn: 'span 4', marginBottom: 0 }}>
+                  <div className="input-group col-4">
                     <label><Sprout size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} /> Crop</label>
                     <input 
                       className="input-field"
@@ -361,7 +427,7 @@ const App: React.FC = () => {
                       onChange={e => setFormData({...formData, crop: e.target.value})}
                     />
                   </div>
-                  <div className="input-group" style={{ gridColumn: 'span 4', marginBottom: 0 }}>
+                  <div className="input-group col-4">
                     <label><Scale size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} /> Quantity (kg)</label>
                     <input 
                       className="input-field"
@@ -372,7 +438,7 @@ const App: React.FC = () => {
                       onChange={e => setFormData({...formData, quantity: e.target.value})}
                     />
                   </div>
-                  <div className="input-group" style={{ gridColumn: 'span 4', marginBottom: 0 }}>
+                  <div className="input-group col-4">
                     <label><Calendar size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} /> Date</label>
                     <input 
                       className="input-field"
@@ -420,7 +486,7 @@ const App: React.FC = () => {
               </form>
             </div>
 
-            <div style={{ gridColumn: 'span 4' }} className="animate-in delay-2">
+            <div className="animate-in delay-2 col-4">
               <h3 className="label-caps" style={{ marginBottom: '24px' }}>Recent Registry</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {batches.map(batch => (
@@ -447,8 +513,8 @@ const App: React.FC = () => {
         ) : (
           <div className="animate-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
             {/* Search */}
-            <div className="card" style={{ padding: '16px', marginBottom: '48px', display: 'flex', gap: '12px', alignItems: 'center', background: 'var(--surface-light)' }}>
-              <div style={{ position: 'relative', flex: 1 }}>
+            <div className="card" style={{ padding: '12px', marginBottom: '32px', display: 'flex', gap: '12px', alignItems: 'center', background: 'var(--surface-light)', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: '1 1 300px' }}>
                 <Search style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} size={20} />
                 <input 
                   type="text" 
@@ -460,30 +526,34 @@ const App: React.FC = () => {
                   onKeyDown={e => e.key === 'Enter' && handleSearch()}
                 />
               </div>
-              <button className="btn btn-primary" onClick={handleSearch} disabled={loading} style={{ height: '48px', padding: '0 24px' }}>
+              <button className="btn btn-primary" onClick={() => handleSearch()} disabled={loading} style={{ height: '48px', padding: '0 24px', flex: '1 1 100px' }}>
                 {loading ? "Tracing..." : "Trace Origin"}
               </button>
             </div>
 
             {/* Results */}
             {result ? (
-              <div className="card animate-in" style={{ padding: '48px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '48px', flexWrap: 'wrap', gap: '32px' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-                      <span className="badge-verified">
-                        <CheckCircle2 size={14} /> Blockchain Verified
+              <div className="card animate-in" style={{ padding: 'clamp(20px, 5vw, 48px)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', flexWrap: 'wrap', gap: '32px' }}>
+                  <div style={{ flex: '1 1 300px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                      <span className={result.verificationSource === 'blockchain' ? "badge-verified" : "badge-cloud"}>
+                        {result.verificationSource === 'blockchain' ? (
+                          <><CheckCircle2 size={14} /> Blockchain Verified</>
+                        ) : (
+                          <><ShieldCheck size={14} /> Verified via Cloud</>
+                        )}
                       </span>
                       <span style={{ fontFamily: 'Space Grotesk', fontSize: '13px', color: 'var(--text-muted)' }}>ID: {result.id}</span>
                     </div>
-                    <h2 style={{ fontSize: '48px', marginBottom: '12px' }}>{result.crop}</h2>
+                    <h2 style={{ fontSize: 'clamp(2rem, 8vw, 3rem)', marginBottom: '12px' }}>{result.crop}</h2>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)' }}>
                       <MapPin size={20} />
                       <span style={{ fontSize: '18px', fontWeight: '500' }}>{result.location}</span>
                     </div>
                   </div>
                   
-                  <div style={{ textAlign: 'center' }}>
+                  <div style={{ textAlign: 'center', margin: '0 auto' }}>
                     <div className="qr-wrapper">
                       <QRCodeSVG 
                         value={getVerificationUrl(result.id)} 
@@ -495,20 +565,20 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid-main" style={{ marginBottom: '48px', gap: '20px' }}>
+                <div className="grid-main" style={{ marginBottom: '32px', gap: '16px' }}>
                   {[
                     { icon: User, label: 'Farmer', value: result.farmer },
                     { icon: Scale, label: 'Batch Size', value: `${result.quantity}kg` },
-                    { icon: Calendar, label: 'Harvest Date', value: new Date(result.harvestDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) },
+                    { icon: Calendar, label: 'Harvest Date', value: new Date(result.harvestDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
                     { icon: BadgeCheck, label: 'Quality', value: result.organic ? 'Certified Organic' : 'Premium Grade' }
                   ].map((item, i) => (
-                    <div key={i} className="col-8" style={{ gridColumn: 'span 6', padding: '24px', background: 'var(--surface-light)', borderRadius: '16px', border: '1px solid var(--border-light)', display: 'flex', gap: '16px' }}>
+                    <div key={i} className="col-6" style={{ padding: '20px', background: 'var(--surface-light)', borderRadius: '16px', border: '1px solid var(--border-light)', display: 'flex', gap: '12px' }}>
                       <div style={{ color: 'var(--primary)', background: 'var(--primary-glow)', padding: '10px', borderRadius: '10px', height: 'fit-content' }}>
-                        <item.icon size={20} />
+                        <item.icon size={18} />
                       </div>
-                      <div>
-                        <span className="label-caps" style={{ fontSize: '10px' }}>{item.label}</span>
-                        <p style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-main)' }}>{item.value}</p>
+                      <div style={{ overflow: 'hidden' }}>
+                        <span className="label-caps" style={{ fontSize: '9px' }}>{item.label}</span>
+                        <p style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{item.value}</p>
                       </div>
                     </div>
                   ))}
