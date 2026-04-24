@@ -40,7 +40,7 @@ interface BatchResult {
 
 const JSONBIN_CONFIG = {
   // BIN_ID is not a secret — it's a public identifier safe to embed in code
-  BIN_ID: import.meta.env.VITE_JSONBIN_BIN_ID || '69ebba1836566621a8ea7a83',
+  BIN_ID: import.meta.env.VITE_JSONBIN_BIN_ID || '69ebbfe0856a6821896c12cb',
   // API_KEY is only needed for WRITES — reads work on public bins without it
   API_KEY: import.meta.env.VITE_JSONBIN_API_KEY || ''
 };
@@ -279,10 +279,12 @@ const App: React.FC = () => {
     let foundOnBlockchain = false;
 
     // Step 1: Try Blockchain First (most reliable source of truth)
-    if (CONTRACT_ADDRESS && id.startsWith('FT-')) {
+    // Try to extract a numeric ID whether it has FT- prefix or not
+    const numericId = id.startsWith('FT-') ? id.split('-')[1] : id;
+    
+    if (CONTRACT_ADDRESS && !isNaN(parseInt(numericId))) {
       try {
-        const batchId = id.split('-')[1];
-        if (batchId && !isNaN(parseInt(batchId))) {
+        const batchId = parseInt(numericId);
           // Use multiple RPC fallbacks for mobile reliability
           const rpcs = [
             import.meta.env.VITE_NETWORK_RPC,
@@ -337,11 +339,14 @@ const App: React.FC = () => {
     }
 
     // Step 2: Fallback → Local/Cloud (JSONBin)
-    // Only run this if not found on blockchain
-    const found = batches.find(b => 
-      b.id.replace('#', '').toUpperCase() === id || 
-      b.id.replace('#', '').toUpperCase() === `FT-${id}`
-    );
+    // Robust matching for "FT-X" vs "X"
+    const searchIdNormalized = id.startsWith('FT-') ? id : `FT-${id}`;
+    const searchIdShort = id.startsWith('FT-') ? id.replace('FT-', '') : id;
+
+    const found = batches.find(b => {
+      const bId = b.id.replace('#', '').toUpperCase();
+      return bId === searchIdNormalized || bId === searchIdShort || `FT-${bId}` === searchIdNormalized;
+    });
 
     if (found) {
       setResult({
