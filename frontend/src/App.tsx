@@ -288,10 +288,11 @@ const App: React.FC = () => {
         // Use multiple RPC fallbacks for mobile reliability
         const rpcs = [
           import.meta.env.VITE_NETWORK_RPC,
-          "https://rpc.ankr.com/eth_sepolia",
-          "https://eth-sepolia.public.blastapi.io",
-          "https://rpc.sepolia.org"
-        ].filter(Boolean);
+          "https://rpc2.sepolia.org",
+          "https://sepolia.infura.io/v3/",
+          "https://eth-sepolia.g.alchemy.com/v2/demo",
+          "https://ethereum-sepolia-rpc.publicnode.com"
+        ].filter(Boolean).map(url => url.trim());
 
         let batch = null;
         for (const rpcUrl of rpcs) {
