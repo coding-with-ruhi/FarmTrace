@@ -39,8 +39,10 @@ interface BatchResult {
 }
 
 const JSONBIN_CONFIG = {
-  BIN_ID: import.meta.env.VITE_JSONBIN_BIN_ID || '67c9c6f2e41b4d34e49f692a',
-  API_KEY: import.meta.env.VITE_JSONBIN_API_KEY || '$2a$10$T8VqXlW3hXy.Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z'
+  // BIN_ID is not a secret — it's a public identifier safe to embed in code
+  BIN_ID: import.meta.env.VITE_JSONBIN_BIN_ID || '69ebba1836566621a8ea7a83',
+  // API_KEY is only needed for WRITES — reads work on public bins without it
+  API_KEY: import.meta.env.VITE_JSONBIN_API_KEY || ''
 };
 
 const App: React.FC = () => {
@@ -80,12 +82,15 @@ const App: React.FC = () => {
 
   // NEW: Cloud Sync Logic
   const fetchBatchesFromCloud = async () => {
-    if (!JSONBIN_CONFIG.BIN_ID || JSONBIN_CONFIG.BIN_ID.includes('Placeholder')) return;
+    if (!JSONBIN_CONFIG.BIN_ID) return;
     try {
-      const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.BIN_ID}/latest`, {
-        headers: { 'X-Master-Key': JSONBIN_CONFIG.API_KEY }
-      });
-      if (!res.ok) throw new Error('Cloud fetch failed');
+      // Reads work on PUBLIC bins without an API key — no Vercel env vars needed on the phone!
+      const headers: Record<string, string> = { 'X-Bin-Meta': 'false' };
+      if (JSONBIN_CONFIG.API_KEY) {
+        headers['X-Master-Key'] = JSONBIN_CONFIG.API_KEY;
+      }
+      const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.BIN_ID}/latest`, { headers });
+      if (!res.ok) throw new Error(`Cloud fetch failed: ${res.status}`);
       const data = await res.json();
       if (data.record && Array.isArray(data.record)) {
         setBatches(data.record);
@@ -97,7 +102,8 @@ const App: React.FC = () => {
   };
 
   const saveBatchesToCloud = async (updatedBatches: BatchResult[]) => {
-    if (!JSONBIN_CONFIG.BIN_ID || JSONBIN_CONFIG.BIN_ID.includes('Placeholder')) return;
+    // Writes require an API key — only works on devices that have it in .env
+    if (!JSONBIN_CONFIG.BIN_ID || !JSONBIN_CONFIG.API_KEY) return;
     try {
       await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.BIN_ID}`, {
         method: 'PUT',
@@ -254,10 +260,10 @@ const App: React.FC = () => {
       const id = batchFromUrl.trim().replace('#', '').toUpperCase();
       setSearchId(id);
       
-      // Give time for cloud fetch to complete if it's the first load
+      // Give time for cloud fetch to complete — 3s for slower mobile networks
       const timer = setTimeout(() => {
         handleSearch(id);
-      }, 1500);
+      }, 3000);
       return () => clearTimeout(timer);
     }
   }, []);
